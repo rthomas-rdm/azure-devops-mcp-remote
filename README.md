@@ -1,4 +1,11 @@
-# ⭐ Azure DevOps MCP Server
+# ⭐ Azure DevOps MCP Server (Temporary Fork For Testing Remote Hosting Support)
+
+**Fork Description:**
+There have been numerous requests for an option to support a hosted version of the azure devops mcp server which is not limited to access for local only agents/models. The maintainers of the local azure devops mcp server have stated that a ["Azure DevOps product team is working on a remote option as well"](https://github.com/microsoft/azure-devops-mcp/issues/622#issuecomment-3433382967) but have thus far been unable to provide any concrete ideas on when such an option might become available nor have they even been able to concretely add it to their product roadmap.
+
+This fork is intended to to investigate if it is possible to modify the local mcp server for remote use with a minimum amount of change to allow experimentation in short term cases while we wait for an official remote hosted solution.
+
+----
 
 Easily install the Azure DevOps MCP Server for VS Code or VS Code Insiders:
 
