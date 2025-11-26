@@ -4,7 +4,7 @@
 // Licensed under the MIT License.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+//import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { getBearerHandler, WebApi } from "azure-devops-node-api";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
@@ -17,6 +17,7 @@ import { configureAllTools } from "./tools.js";
 import { UserAgentComposer } from "./useragent.js";
 import { packageVersion } from "./version.js";
 import { DomainsManager } from "./shared/domains.js";
+import { StreamableHttpWebServerWithSessions } from "transport/http-web-server-with-sessions.js";
 
 function isGitHubCodespaceEnv(): boolean {
   return process.env.CODESPACES === "true" && !!process.env.CODESPACE_NAME;
@@ -111,8 +112,11 @@ async function main() {
 
   configureAllTools(server, authenticator, getAzureDevOpsClient(authenticator, userAgentComposer), () => userAgentComposer.userAgent, enabledDomains);
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  //const transport = new StdioServerTransport();
+  //await server.connect(transport);
+
+  const webServier = new StreamableHttpWebServerWithSessions(server);
+  await webServier.start();
 }
 
 main().catch((error) => {

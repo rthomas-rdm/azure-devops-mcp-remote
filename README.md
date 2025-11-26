@@ -5,7 +5,7 @@ There have been numerous requests for an option to support a hosted version of t
 
 This fork is intended to to investigate if it is possible to modify the local mcp server for remote use with a minimum amount of change to allow experimentation in short term cases while we wait for an official remote hosted solution.
 
-----
+---
 
 Easily install the Azure DevOps MCP Server for VS Code or VS Code Insiders:
 
