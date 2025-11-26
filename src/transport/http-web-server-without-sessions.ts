@@ -1,12 +1,13 @@
-import express, { type Express, type Request as ExpressRequest, type Response as ExpressResponse } from "express";
+import express, { type Express, type Request as ExpressRequest, type Response as ExpressResponse, type RequestHandler as ExpressRequestHandler } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { randomUUID } from "crypto";
 import { type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
+import { JwtTokenVerifier } from "./jwt-token-verifier.js";
 
 // Based on mcp typescript sdk example: https://github.com/modelcontextprotocol/typescript-sdk#without-session-management-recommended
 export class StreamableHttpWebServerWithoutSessions {
   private app: Express;
+  private authMiddleware: ExpressRequestHandler;
   private mcpServer: McpServer;
 
   constructor(mcpServer: McpServer) {
@@ -15,8 +16,10 @@ export class StreamableHttpWebServerWithoutSessions {
     this.app = express();
     this.app.use(express.json());
 
+    this.authMiddleware = requireBearerAuth({ verifier: new JwtTokenVerifier() });
+
     // Handle POST requests for client-to-server communication
-    this.app.post("/mcp", this.handlePost);
+    this.app.post("/mcp", this.authMiddleware, this.handlePost);
   }
 
   private handlePost = async (request: ExpressRequest, response: ExpressResponse) => {
