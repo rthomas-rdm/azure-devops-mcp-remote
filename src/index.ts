@@ -115,8 +115,8 @@ async function main() {
   //const transport = new StdioServerTransport();
   //await server.connect(transport);
 
-  const webServier = new StreamableHttpWebServerWithSessions(server);
-  await webServier.start();
+  const webServer = new StreamableHttpWebServerWithSessions(server);
+  await webServer.start();
 }
 
 main().catch((error) => {

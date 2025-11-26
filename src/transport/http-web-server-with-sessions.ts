@@ -1,34 +1,46 @@
-import express, { type Express, type Request as ExpressRequest, type Response as ExpressResponse, type RequestHandler as ExpressRequestHandler } from "express";
+import express, { type Express, type Request as ExpressRequest, type Response as ExpressResponse } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "crypto";
 import { type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
-import { JwtTokenVerifier } from "./jwt-token-verifier.js";
+import { auth as jwtBearerOAuthMiddleware } from "express-oauth2-jwt-bearer";
 
 // Based on mcp typescript sdk example: https://github.com/modelcontextprotocol/typescript-sdk#with-session-management
 export class StreamableHttpWebServerWithSessions {
   private app: Express;
-  private authMiddleware: ExpressRequestHandler;
   private mcpServer: McpServer;
   private transportsBySessionId: Map<string, StreamableHTTPServerTransport> = new Map();
 
   constructor(mcpServer: McpServer) {
     this.mcpServer = mcpServer;
 
+    const issuerBaseUrl = process.env.OAUTH_ISSUER_BASE_URL;
+    if (!issuerBaseUrl) {
+      throw new Error("OAUTH_ISSUER_BASE_URL environment variable is not set");
+    }
+
+    const audience = process.env.OAUTH_AUDIENCE;
+    if (!audience) {
+      throw new Error("OAUTH_AUDIENCE environment variable is not set");
+    }
+
     this.app = express();
     this.app.use(express.json());
-
-    this.authMiddleware = requireBearerAuth({ verifier: new JwtTokenVerifier() });
+    this.app.use(
+      jwtBearerOAuthMiddleware({
+        issuerBaseURL: issuerBaseUrl,
+        audience,
+      })
+    );
 
     // Handle POST requests for client-to-server communication
-    this.app.post("/mcp", this.authMiddleware, this.handlePost);
-    this.app.get("/mcp", this.authMiddleware, this.handleGetOrDeleteSessionRequest);
-    this.app.delete("/mcp", this.authMiddleware, this.handleGetOrDeleteSessionRequest);
+    this.app.post("/mcp", this.handlePost);
+    this.app.get("/mcp", this.handleGetOrDeleteSessionRequest);
+    this.app.delete("/mcp", this.handleGetOrDeleteSessionRequest);
   }
 
   // Reusable handler for GET and DELETE requests
-  private handleGetOrDeleteSessionRequest = async (request: ExpressRequest, response: ExpressResponse) => {
+  private handleGetOrDeleteSessionRequest = async (request: any, response: ExpressResponse) => {
     const sessionId = request.headers["mcp-session-id"] as string | undefined;
 
     const transport = sessionId ? this.transportsBySessionId.get(sessionId || "") : undefined;
@@ -41,7 +53,7 @@ export class StreamableHttpWebServerWithSessions {
     await transport.handleRequest(request, response);
   };
 
-  private handlePost = async (request: ExpressRequest, response: ExpressResponse) => {
+  private handlePost = async (request: any, response: ExpressResponse) => {
     // Check for existing session ID
     const sessionId = request.headers["mcp-session-id"] as string | undefined;
     let transport: StreamableHTTPServerTransport;
