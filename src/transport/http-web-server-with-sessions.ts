@@ -4,6 +4,8 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "crypto";
 import { type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { auth as jwtBearerOAuthMiddleware } from "express-oauth2-jwt-bearer";
+import { logger } from "../logger.js";
+import cors from "cors";
 
 // Based on mcp typescript sdk example: https://github.com/modelcontextprotocol/typescript-sdk#with-session-management
 export class StreamableHttpWebServerWithSessions {
@@ -25,13 +27,24 @@ export class StreamableHttpWebServerWithSessions {
     }
 
     this.app = express();
-    this.app.use(express.json());
+
+    this.app.use(
+      cors({
+        origin: "*", // Configure appropriately for production, for example:
+        // origin: ['https://your-remote-domain.com', 'https://your-other-remote-domain.com'],
+        exposedHeaders: ["Mcp-Session-Id"],
+        allowedHeaders: ["Content-Type", "mcp-session-id"],
+      })
+    );
+
     this.app.use(
       jwtBearerOAuthMiddleware({
         issuerBaseURL: issuerBaseUrl,
         audience,
       })
     );
+
+    this.app.use(express.json());
 
     // Handle POST requests for client-to-server communication
     this.app.post("/mcp", this.handlePost);
@@ -60,8 +73,11 @@ export class StreamableHttpWebServerWithSessions {
 
     if (sessionId && this.transportsBySessionId.has(sessionId)) {
       // Reuse existing transport
+      logger.debug(`Reusing existing transport for session ID: ${sessionId}`);
       transport = this.transportsBySessionId.get(sessionId)!;
     } else if (!sessionId && isInitializeRequest(request.body)) {
+      logger.debug("Initializing new transport for new session");
+
       // New initialization request
       transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
@@ -86,6 +102,8 @@ export class StreamableHttpWebServerWithSessions {
       // Connect to the MCP server
       await this.mcpServer.connect(transport);
     } else {
+      logger.debug("Invalid or missing session ID for POST request. Was an initialization request sent?");
+
       // Invalid request
       response.status(400).json({
         jsonrpc: "2.0",

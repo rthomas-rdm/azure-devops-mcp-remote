@@ -2,6 +2,8 @@ import express, { type Express, type Request as ExpressRequest, type Response as
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { auth as jwtBearerOAuthMiddleware } from "express-oauth2-jwt-bearer";
+import { logger } from "../logger.js";
+import cors from "cors";
 
 // Based on mcp typescript sdk example: https://github.com/modelcontextprotocol/typescript-sdk#without-session-management-recommended
 export class StreamableHttpWebServerWithoutSessions {
@@ -22,13 +24,24 @@ export class StreamableHttpWebServerWithoutSessions {
     }
 
     this.app = express();
-    this.app.use(express.json());
+
+    this.app.use(
+      cors({
+        origin: "*", // Configure appropriately for production, for example:
+        // origin: ['https://your-remote-domain.com', 'https://your-other-remote-domain.com'],
+        exposedHeaders: ["Mcp-Session-Id"],
+        allowedHeaders: ["Content-Type", "mcp-session-id"],
+      })
+    );
+
     this.app.use(
       jwtBearerOAuthMiddleware({
         issuerBaseURL: issuerBaseUrl,
         audience,
       })
     );
+
+    this.app.use(express.json());
 
     // Handle POST requests for client-to-server communication
     this.app.post("/mcp", this.handlePost);
@@ -53,7 +66,7 @@ export class StreamableHttpWebServerWithoutSessions {
       await this.mcpServer.connect(transport);
       await transport.handleRequest(request, response, request.body);
     } catch (error) {
-      console.error("Error handling MCP request:", error);
+      logger.error("Error handling MCP request:", error);
       if (!response.headersSent) {
         response.status(500).json({
           jsonrpc: "2.0",
@@ -73,11 +86,11 @@ export class StreamableHttpWebServerWithoutSessions {
     return new Promise((resolve, reject) => {
       this.app
         .listen(port, () => {
-          console.log(`MCP WebServer listening on port ${port}`);
+          logger.info(`MCP WebServer listening on port ${port}`);
           resolve();
         })
         .on("error", (listenError) => {
-          console.error("Failed to start MCP WebServer:", listenError);
+          logger.error("Failed to start MCP WebServer:", listenError);
           reject(listenError);
         });
     });

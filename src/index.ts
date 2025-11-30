@@ -17,7 +17,7 @@ import { configureAllTools } from "./tools.js";
 import { UserAgentComposer } from "./useragent.js";
 import { packageVersion } from "./version.js";
 import { DomainsManager } from "./shared/domains.js";
-import { StreamableHttpWebServerWithSessions } from "transport/http-web-server-with-sessions.js";
+import { StreamableHttpWebServerWithSessions } from "./transport/http-web-server-with-sessions.js";
 
 function isGitHubCodespaceEnv(): boolean {
   return process.env.CODESPACES === "true" && !!process.env.CODESPACE_NAME;

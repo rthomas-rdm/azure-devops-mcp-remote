@@ -43,6 +43,7 @@
     "azure-devops-extension-api": "^4.252.0",
     "azure-devops-extension-sdk": "^4.0.2",
     "azure-devops-node-api": "^15.1.0",
+    "cors": "^2.8.5",
     "express": "^5.1.0",
     "express-oauth2-jwt-bearer": "^1.7.1",
     "winston": "^3.18.3",
@@ -52,6 +53,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/inspector": "^0.17.0",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.19.1",
