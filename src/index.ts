@@ -30,13 +30,7 @@ const argv = yargs(hideBin(process.argv))
   .scriptName("mcp-server-azuredevops")
   .usage("Usage: $0 <organization> [options]")
   .version(packageVersion)
-  .command("$0 <organization> [options]", "Azure DevOps MCP Server", (yargs) => {
-    yargs.positional("organization", {
-      describe: "Azure DevOps organization name",
-      type: "string",
-      demandOption: true,
-    });
-  })
+  .command("$0 [options]", "Azure DevOps MCP Server")
   .option("domains", {
     alias: "d",
     describe: "Domain(s) to enable: 'all' for everything, or specific domains like 'repositories builds work'. Defaults to 'all'.",
@@ -56,10 +50,25 @@ const argv = yargs(hideBin(process.argv))
     describe: "Azure tenant ID (optional, applied when using 'interactive' and 'azcli' type of authentication)",
     type: "string",
   })
+  .option("organization", {
+    describe: "Azure DevOps organization name",
+    type: "string",
+    alias: "o",
+  })
   .help()
   .parseSync();
 
-export const orgName = argv.organization as string;
+let orgNameLocal = argv.organization as string;
+if (!orgNameLocal) {
+  orgNameLocal = process.env.AZURE_DEVOPS_ORG_NAME || "";
+  if (!orgNameLocal) {
+    logger.error("Azure DevOps organization name not provided. Set the AZURE_DEVOPS_ORG_NAME environment variable or use the --organization cli argument.");
+    process.exit(1);
+  }
+}
+
+export const orgName = orgNameLocal;
+
 const orgUrl = "https://dev.azure.com/" + orgName;
 
 const domainsManager = new DomainsManager(argv.domains);
