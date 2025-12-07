@@ -2,9 +2,9 @@
 // Licensed under the MIT License.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { WebApi } from "azure-devops-node-api";
 import { z } from "zod";
 import { TreeStructureGroup, TreeNodeStructureType, WorkItemClassificationNode } from "azure-devops-node-api/interfaces/WorkItemTrackingInterfaces.js";
+import type { AdoConnectionProvider, AuthHeaderProvider } from "./auth-provider-interfaces.js";
 
 const WORK_TOOLS = {
   list_team_iterations: "work_list_team_iterations",
@@ -16,7 +16,7 @@ const WORK_TOOLS = {
   get_iteration_capacities: "work_get_iteration_capacities",
 };
 
-function configureWorkTools(server: McpServer, _: () => Promise<string>, connectionProvider: () => Promise<WebApi>) {
+function configureWorkTools(server: McpServer, _: AuthHeaderProvider, connectionProvider: AdoConnectionProvider) {
   server.tool(
     WORK_TOOLS.list_team_iterations,
     "Retrieve a list of iterations for a specific team in a project.",
@@ -25,9 +25,9 @@ function configureWorkTools(server: McpServer, _: () => Promise<string>, connect
       team: z.string().describe("The name or ID of the Azure DevOps team."),
       timeframe: z.enum(["current"]).optional().describe("The timeframe for which to retrieve iterations. Currently, only 'current' is supported."),
     },
-    async ({ project, team, timeframe }) => {
+    async ({ project, team, timeframe }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workApi = await connection.getWorkApi();
         const iterations = await workApi.getTeamIterations({ project, team }, timeframe);
 
@@ -64,9 +64,9 @@ function configureWorkTools(server: McpServer, _: () => Promise<string>, connect
         )
         .describe("An array of iterations to create. Each iteration must have a name and can optionally have start and finish dates in ISO format."),
     },
-    async ({ project, iterations }) => {
+    async ({ project, iterations }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemTrackingApi = await connection.getWorkItemTrackingApi();
         const results = [];
 
@@ -115,9 +115,9 @@ function configureWorkTools(server: McpServer, _: () => Promise<string>, connect
       depth: z.number().default(2).describe("Depth of children to fetch."),
       excludedIds: z.array(z.number()).optional().describe("An optional array of iteration IDs, and thier children, that should not be returned."),
     },
-    async ({ project, depth, excludedIds: ids }) => {
+    async ({ project, depth, excludedIds: ids }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemTrackingApi = await connection.getWorkItemTrackingApi();
         let results = [];
 
@@ -187,9 +187,9 @@ function configureWorkTools(server: McpServer, _: () => Promise<string>, connect
         )
         .describe("An array of iterations to assign. Each iteration must have an identifier and a path."),
     },
-    async ({ project, team, iterations }) => {
+    async ({ project, team, iterations }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workApi = await connection.getWorkApi();
         const teamContext = { project, team };
         const results = [];
@@ -228,9 +228,9 @@ function configureWorkTools(server: McpServer, _: () => Promise<string>, connect
       team: z.string().describe("The name or Id of the Azure DevOps team."),
       iterationId: z.string().describe("The Iteration Id to get capacity for."),
     },
-    async ({ project, team, iterationId }) => {
+    async ({ project, team, iterationId }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workApi = await connection.getWorkApi();
         const teamContext = { project, team };
 
@@ -299,9 +299,9 @@ function configureWorkTools(server: McpServer, _: () => Promise<string>, connect
         .optional()
         .describe("Array of days off for the team member, each with a start and end date in ISO format."),
     },
-    async ({ project, team, teamMemberId, iterationId, activities, daysOff }) => {
+    async ({ project, team, teamMemberId, iterationId, activities, daysOff }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workApi = await connection.getWorkApi();
         const teamContext = { project, team };
 
@@ -363,9 +363,9 @@ function configureWorkTools(server: McpServer, _: () => Promise<string>, connect
       project: z.string().describe("The name or Id of the Azure DevOps project."),
       iterationId: z.string().describe("The Iteration Id to get capacity for."),
     },
-    async ({ project, iterationId }) => {
+    async ({ project, iterationId }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workApi = await connection.getWorkApi();
 
         const rawResults = await workApi.getTotalIterationCapacities(project, iterationId);

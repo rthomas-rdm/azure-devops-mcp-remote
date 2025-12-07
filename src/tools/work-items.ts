@@ -2,11 +2,11 @@
 // Licensed under the MIT License.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { WebApi } from "azure-devops-node-api";
 import { WorkItemExpand, WorkItemRelation } from "azure-devops-node-api/interfaces/WorkItemTrackingInterfaces.js";
 import { QueryExpand } from "azure-devops-node-api/interfaces/WorkItemTrackingInterfaces.js";
 import { z } from "zod";
 import { batchApiVersion, markdownCommentsApiVersion, getEnumKeys, safeEnumConvert, encodeFormattedValue } from "../utils.js";
+import type { AdoConnectionProvider, AuthHeaderProvider } from "./auth-provider-interfaces.js";
 
 const WORKITEM_TOOLS = {
   my_work_items: "wit_my_work_items",
@@ -62,7 +62,7 @@ function getLinkTypeFromName(name: string) {
   }
 }
 
-function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<string>, connectionProvider: () => Promise<WebApi>, userAgentProvider: () => string) {
+function configureWorkItemTools(server: McpServer, authHeaderProvider: AuthHeaderProvider, connectionProvider: AdoConnectionProvider, userAgentProvider: () => string) {
   server.tool(
     WORKITEM_TOOLS.list_backlogs,
     "Receive a list of backlogs for a given project and team.",
@@ -70,9 +70,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
       project: z.string().describe("The name or ID of the Azure DevOps project."),
       team: z.string().describe("The name or ID of the Azure DevOps team."),
     },
-    async ({ project, team }) => {
+    async ({ project, team }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workApi = await connection.getWorkApi();
         const teamContext = { project, team };
         const backlogs = await workApi.getBacklogs(teamContext);
@@ -98,9 +98,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
       team: z.string().describe("The name or ID of the Azure DevOps team."),
       backlogId: z.string().describe("The ID of the backlog category to retrieve work items from."),
     },
-    async ({ project, team, backlogId }) => {
+    async ({ project, team, backlogId }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workApi = await connection.getWorkApi();
         const teamContext = { project, team };
 
@@ -128,9 +128,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
       top: z.number().default(50).describe("The maximum number of work items to return. Defaults to 50."),
       includeCompleted: z.boolean().default(false).describe("Whether to include completed work items. Defaults to false."),
     },
-    async ({ project, type, top, includeCompleted }) => {
+    async ({ project, type, top, includeCompleted }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workApi = await connection.getWorkApi();
 
         const workItems = await workApi.getPredefinedQueryResults(project, type, top, includeCompleted);
@@ -156,9 +156,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
       ids: z.array(z.number()).describe("The IDs of the work items to retrieve."),
       fields: z.array(z.string()).optional().describe("Optional list of fields to include in the response. If not provided, a hardcoded default set of fields will be used."),
     },
-    async ({ project, ids, fields }) => {
+    async ({ project, ids, fields }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemApi = await connection.getWorkItemTrackingApi();
         const defaultFields = ["System.Id", "System.WorkItemType", "System.Title", "System.State", "System.Parent", "System.Tags", "Microsoft.VSTS.Common.StackRank", "System.AssignedTo"];
 
@@ -222,9 +222,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         .optional()
         .describe("Expand options include 'all', 'fields', 'links', 'none', and 'relations'. Relations can be used to get child workitems. Defaults to 'none'."),
     },
-    async ({ id, project, fields, asOf, expand }) => {
+    async ({ id, project, fields, asOf, expand }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemApi = await connection.getWorkItemTrackingApi();
         const workItem = await workItemApi.getWorkItem(id, fields, asOf, expand as unknown as WorkItemExpand, project);
 
@@ -250,9 +250,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
       workItemId: z.number().describe("The ID of the work item to retrieve comments for."),
       top: z.number().default(50).describe("Optional number of comments to retrieve. Defaults to all comments."),
     },
-    async ({ project, workItemId, top }) => {
+    async ({ project, workItemId, top }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemApi = await connection.getWorkItemTrackingApi();
         const comments = await workItemApi.getComments(project, workItemId, top);
 
@@ -278,11 +278,11 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
       comment: z.string().describe("The text of the comment to add to the work item."),
       format: z.enum(["markdown", "html"]).optional().default("html"),
     },
-    async ({ project, workItemId, comment, format }) => {
+    async ({ project, workItemId, comment, format }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const orgUrl = connection.serverUrl;
-        const accessToken = await tokenProvider();
+        const authHeader = await authHeaderProvider(toolExtraContext);
 
         const body = {
           text: comment,
@@ -292,7 +292,7 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         const response = await fetch(`${orgUrl}/${project}/_apis/wit/workItems/${workItemId}/comments?format=${formatParameter}&api-version=${markdownCommentsApiVersion}`, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${accessToken}`,
+            "Authorization": authHeader,
             "Content-Type": "application/json",
             "User-Agent": userAgentProvider(),
           },
@@ -332,9 +332,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         .optional()
         .describe("Optional expand parameter to include additional details. Defaults to 'None'."),
     },
-    async ({ project, workItemId, top, skip, expand }) => {
+    async ({ project, workItemId, top, skip, expand }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemApi = await connection.getWorkItemTrackingApi();
         const revisions = await workItemApi.getRevisions(workItemId, top, skip, safeEnumConvert(WorkItemExpand, expand), project);
 
@@ -396,11 +396,11 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         })
       ),
     },
-    async ({ parentId, project, workItemType, items }) => {
+    async ({ parentId, project, workItemType, items }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const orgUrl = connection.serverUrl;
-        const accessToken = await tokenProvider();
+        const authHeader = await authHeaderProvider(toolExtraContext);
 
         if (items.length > 50) {
           return {
@@ -486,7 +486,7 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         const response = await fetch(`${orgUrl}/_apis/wit/$batch?api-version=${batchApiVersion}`, {
           method: "PATCH",
           headers: {
-            "Authorization": `Bearer ${accessToken}`,
+            "Authorization": authHeader,
             "Content-Type": "application/json",
             "User-Agent": userAgentProvider(),
           },
@@ -523,9 +523,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
       workItemId: z.number().describe("The ID of the work item to link to the pull request."),
       pullRequestProjectId: z.string().optional().describe("The project ID containing the pull request. If not provided, defaults to the work item's project ID (for same-project linking)."),
     },
-    async ({ projectId, repositoryId, pullRequestId, workItemId, pullRequestProjectId }) => {
+    async ({ projectId, repositoryId, pullRequestId, workItemId, pullRequestProjectId }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemTrackingApi = await connection.getWorkItemTrackingApi();
 
         // Create artifact link relation using vstfs format
@@ -591,9 +591,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
       team: z.string().optional().describe("The name or ID of the Azure DevOps team. If not provided, the default team will be used."),
       iterationId: z.string().describe("The ID of the iteration to retrieve work items for."),
     },
-    async ({ project, team, iterationId }) => {
+    async ({ project, team, iterationId }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workApi = await connection.getWorkApi();
 
         //get the work items for the current iteration
@@ -632,9 +632,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         )
         .describe("An array of field updates to apply to the work item."),
     },
-    async ({ id, updates }) => {
+    async ({ id, updates }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemApi = await connection.getWorkItemTrackingApi();
 
         // Convert operation names to lowercase for API
@@ -665,9 +665,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
       project: z.string().describe("The name or ID of the Azure DevOps project."),
       workItemType: z.string().describe("The name of the work item type to retrieve."),
     },
-    async ({ project, workItemType }) => {
+    async ({ project, workItemType }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemApi = await connection.getWorkItemTrackingApi();
 
         const workItemTypeInfo = await workItemApi.getWorkItemType(project, workItemType);
@@ -701,9 +701,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         )
         .describe("A record of field names and values to set on the new work item. Each fild is the field name and each value is the corresponding value to set for that field."),
     },
-    async ({ project, workItemType, fields }) => {
+    async ({ project, workItemType, fields }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemApi = await connection.getWorkItemTrackingApi();
 
         const document = fields.map(({ name, value, format }) => ({
@@ -759,9 +759,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
       includeDeleted: z.boolean().default(false).describe("Whether to include deleted items in the query results. Defaults to false."),
       useIsoDateFormat: z.boolean().default(false).describe("Whether to use ISO date format in the response. Defaults to false."),
     },
-    async ({ project, query, expand, depth, includeDeleted, useIsoDateFormat }) => {
+    async ({ project, query, expand, depth, includeDeleted, useIsoDateFormat }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemApi = await connection.getWorkItemTrackingApi();
 
         const queryDetails = await workItemApi.getQuery(project, query, safeEnumConvert(QueryExpand, expand), depth, includeDeleted, useIsoDateFormat);
@@ -790,9 +790,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
       top: z.number().default(50).describe("The maximum number of results to return. Defaults to 50."),
       responseType: z.enum(["full", "ids"]).default("full").describe("Response type: 'full' returns complete query results (default), 'ids' returns only work item IDs for reduced payload size."),
     },
-    async ({ id, project, team, timePrecision, top, responseType }) => {
+    async ({ id, project, team, timePrecision, top, responseType }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemApi = await connection.getWorkItemTrackingApi();
         const teamContext = { project, team };
         const queryResult = await workItemApi.queryById(id, teamContext, timePrecision, top);
@@ -835,11 +835,11 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         )
         .describe("An array of updates to apply to work items. Each update should include the operation (op), work item ID (id), field path (path), and new value (value)."),
     },
-    async ({ updates }) => {
+    async ({ updates }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const orgUrl = connection.serverUrl;
-        const accessToken = await tokenProvider();
+        const authHeader = await authHeaderProvider(toolExtraContext);
 
         // Extract unique IDs from the updates array
         const uniqueIds = Array.from(new Set(updates.map((update) => update.id)));
@@ -876,7 +876,7 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         const response = await fetch(`${orgUrl}/_apis/wit/$batch?api-version=${batchApiVersion}`, {
           method: "PATCH",
           headers: {
-            "Authorization": `Bearer ${accessToken}`,
+            "Authorization": authHeader,
             "Content-Type": "application/json",
             "User-Agent": userAgentProvider(),
           },
@@ -923,11 +923,11 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         )
         .describe(""),
     },
-    async ({ project, updates }) => {
+    async ({ project, updates }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const orgUrl = connection.serverUrl;
-        const accessToken = await tokenProvider();
+        const authHeader = await authHeaderProvider(toolExtraContext);
 
         // Extract unique IDs from the updates array
         const uniqueIds = Array.from(new Set(updates.map((update) => update.id)));
@@ -956,7 +956,7 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         const response = await fetch(`${orgUrl}/_apis/wit/$batch?api-version=${batchApiVersion}`, {
           method: "PATCH",
           headers: {
-            "Authorization": `Bearer ${accessToken}`,
+            "Authorization": authHeader,
             "Content-Type": "application/json",
             "User-Agent": userAgentProvider(),
           },
@@ -996,9 +996,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         ),
       url: z.string().optional().describe("Optional URL to match for the link to remove. If not provided, all links of the specified type will be removed."),
     },
-    async ({ project, id, type, url }) => {
+    async ({ project, id, type, url }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemApi = await connection.getWorkItemTrackingApi();
         const workItem = await workItemApi.getWorkItem(id, undefined, undefined, WorkItemExpand.Relations, project);
         const relations: WorkItemRelation[] = workItem.relations ?? [];
@@ -1100,9 +1100,9 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         .describe("Type of artifact link, defaults to 'Branch'. This determines both the link type and how to build the VSTFS URI from individual components."),
       comment: z.string().optional().describe("Comment to include with the artifact link."),
     },
-    async ({ workItemId, project, artifactUri, projectId, repositoryId, branchName, commitId, pullRequestId, buildId, linkType, comment }) => {
+    async ({ workItemId, project, artifactUri, projectId, repositoryId, branchName, commitId, pullRequestId, buildId, linkType, comment }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const workItemTrackingApi = await connection.getWorkItemTrackingApi();
 
         let finalArtifactUri: string;

@@ -51,7 +51,7 @@ describe("auth functions", () => {
         json: jest.fn().mockResolvedValue(mockUserData),
       });
 
-      const result = await getCurrentUserDetails(tokenProvider, connectionProvider, userAgentProvider);
+      const result = await getCurrentUserDetails(toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
 
       expect(global.fetch).toHaveBeenCalledWith("https://dev.azure.com/test-org/_apis/connectionData", {
         method: "GET",
@@ -75,7 +75,7 @@ describe("auth functions", () => {
         json: jest.fn().mockResolvedValue(errorData),
       });
 
-      await expect(getCurrentUserDetails(tokenProvider, connectionProvider, userAgentProvider)).rejects.toThrow("Error fetching user details: Unauthorized");
+      await expect(getCurrentUserDetails(toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider)).rejects.toThrow("Error fetching user details: Unauthorized");
     });
 
     it("should handle network errors correctly", async () => {
@@ -83,7 +83,7 @@ describe("auth functions", () => {
 
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network error"));
 
-      await expect(getCurrentUserDetails(tokenProvider, connectionProvider, userAgentProvider)).rejects.toThrow("Network error");
+      await expect(getCurrentUserDetails(toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider)).rejects.toThrow("Network error");
     });
   });
 
@@ -113,7 +113,7 @@ describe("auth functions", () => {
         json: jest.fn().mockResolvedValue(mockIdentities),
       });
 
-      const result = await searchIdentities("john.doe@example.com", tokenProvider, connectionProvider, userAgentProvider);
+      const result = await searchIdentities("john.doe@example.com", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
 
       expect(global.fetch).toHaveBeenCalledWith("https://vssps.dev.azure.com/test-org/_apis/identities?api-version=7.2-preview.1&searchFilter=General&filterValue=john.doe%40example.com", {
         headers: {
@@ -136,7 +136,7 @@ describe("auth functions", () => {
         text: jest.fn().mockResolvedValue("Not Found"),
       });
 
-      await expect(searchIdentities("nonexistent@example.com", tokenProvider, connectionProvider, userAgentProvider)).rejects.toThrow("HTTP 404: Not Found");
+      await expect(searchIdentities("nonexistent@example.com", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider)).rejects.toThrow("HTTP 404: Not Found");
     });
 
     it("should handle network errors correctly", async () => {
@@ -144,7 +144,7 @@ describe("auth functions", () => {
 
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network timeout"));
 
-      await expect(searchIdentities("test@example.com", tokenProvider, connectionProvider, userAgentProvider)).rejects.toThrow("Network timeout");
+      await expect(searchIdentities("test@example.com", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider)).rejects.toThrow("Network timeout");
     });
 
     it("should properly encode search filter in URL", async () => {
@@ -155,7 +155,7 @@ describe("auth functions", () => {
         json: jest.fn().mockResolvedValue({ value: [] }),
       });
 
-      await searchIdentities("user with spaces@example.com", tokenProvider, connectionProvider, userAgentProvider);
+      await searchIdentities("user with spaces@example.com", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
 
       expect(global.fetch).toHaveBeenCalledWith(
         "https://vssps.dev.azure.com/test-org/_apis/identities?api-version=7.2-preview.1&searchFilter=General&filterValue=user+with+spaces%40example.com",
@@ -185,7 +185,7 @@ describe("auth functions", () => {
         json: jest.fn().mockResolvedValue(mockIdentities),
       });
 
-      const result = await getUserIdFromEmail("john.doe@example.com", tokenProvider, connectionProvider, userAgentProvider);
+      const result = await getUserIdFromEmail("john.doe@example.com", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
 
       expect(global.fetch).toHaveBeenCalledWith("https://vssps.dev.azure.com/test-org/_apis/identities?api-version=7.2-preview.1&searchFilter=General&filterValue=john.doe%40example.com", {
         headers: {
@@ -221,7 +221,7 @@ describe("auth functions", () => {
         json: jest.fn().mockResolvedValue(mockIdentities),
       });
 
-      const result = await getUserIdFromEmail("john.doe@example.com", tokenProvider, connectionProvider, userAgentProvider);
+      const result = await getUserIdFromEmail("john.doe@example.com", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
 
       expect(result).toBe("user1-id");
     });
@@ -235,7 +235,9 @@ describe("auth functions", () => {
         json: jest.fn().mockResolvedValue({ value: [] }),
       });
 
-      await expect(getUserIdFromEmail("nobody@example.com", tokenProvider, connectionProvider, userAgentProvider)).rejects.toThrow("No user found with email/unique name: nobody@example.com");
+      await expect(getUserIdFromEmail("nobody@example.com", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider)).rejects.toThrow(
+        "No user found with email/unique name: nobody@example.com"
+      );
     });
 
     it("should throw error when null response", async () => {
@@ -247,7 +249,9 @@ describe("auth functions", () => {
         json: jest.fn().mockResolvedValue(null),
       });
 
-      await expect(getUserIdFromEmail("test@example.com", tokenProvider, connectionProvider, userAgentProvider)).rejects.toThrow("No user found with email/unique name: test@example.com");
+      await expect(getUserIdFromEmail("test@example.com", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider)).rejects.toThrow(
+        "No user found with email/unique name: test@example.com"
+      );
     });
 
     it("should throw error when user has no ID", async () => {
@@ -269,7 +273,7 @@ describe("auth functions", () => {
         json: jest.fn().mockResolvedValue(mockIdentities),
       });
 
-      await expect(getUserIdFromEmail("john.doe@example.com", tokenProvider, connectionProvider, userAgentProvider)).rejects.toThrow(
+      await expect(getUserIdFromEmail("john.doe@example.com", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider)).rejects.toThrow(
         "No ID found for user with email/unique name: john.doe@example.com"
       );
     });
@@ -284,7 +288,7 @@ describe("auth functions", () => {
         text: jest.fn().mockResolvedValue("Forbidden"),
       });
 
-      await expect(getUserIdFromEmail("test@example.com", tokenProvider, connectionProvider, userAgentProvider)).rejects.toThrow("HTTP 403: Forbidden");
+      await expect(getUserIdFromEmail("test@example.com", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider)).rejects.toThrow("HTTP 403: Forbidden");
     });
 
     it("should handle network errors correctly", async () => {
@@ -292,7 +296,7 @@ describe("auth functions", () => {
 
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Connection refused"));
 
-      await expect(getUserIdFromEmail("test@example.com", tokenProvider, connectionProvider, userAgentProvider)).rejects.toThrow("Connection refused");
+      await expect(getUserIdFromEmail("test@example.com", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider)).rejects.toThrow("Connection refused");
     });
 
     it("should work with unique names as well as emails", async () => {
@@ -313,7 +317,7 @@ describe("auth functions", () => {
         json: jest.fn().mockResolvedValue(mockIdentities),
       });
 
-      const result = await getUserIdFromEmail("john.doe", tokenProvider, connectionProvider, userAgentProvider);
+      const result = await getUserIdFromEmail("john.doe", toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
 
       expect(global.fetch).toHaveBeenCalledWith("https://vssps.dev.azure.com/test-org/_apis/identities?api-version=7.2-preview.1&searchFilter=General&filterValue=john.doe", expect.any(Object));
 

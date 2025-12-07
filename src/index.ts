@@ -5,11 +5,11 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 //import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { getBearerHandler, WebApi } from "azure-devops-node-api";
+import { getBearerHandler, getPersonalAccessTokenHandler, WebApi } from "azure-devops-node-api";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
-import { createAuthenticator } from "./auth.js";
+import { createAuthHeaderProvider } from "./auth.js";
 import { logger } from "./logger.js";
 import { getOrgTenant } from "./org-tenants.js";
 //import { configurePrompts } from "./prompts.js";
@@ -18,6 +18,8 @@ import { UserAgentComposer } from "./useragent.js";
 import { packageVersion } from "./version.js";
 import { DomainsManager } from "./shared/domains.js";
 import { StreamableHttpWebServerWithSessions } from "./transport/http-web-server-with-sessions.js";
+import type { AdoConnectionProvider, AuthHeaderProvider, ToolExtraContext } from "./tools/auth-provider-interfaces.js";
+import type { IRequestHandler } from "azure-devops-node-api/interfaces/common/VsoBaseInterfaces.js";
 
 function isGitHubCodespaceEnv(): boolean {
   return process.env.CODESPACES === "true" && !!process.env.CODESPACE_NAME;
@@ -74,10 +76,25 @@ const orgUrl = "https://dev.azure.com/" + orgName;
 const domainsManager = new DomainsManager(argv.domains);
 export const enabledDomains = domainsManager.getEnabledDomains();
 
-function getAzureDevOpsClient(getAzureDevOpsToken: () => Promise<string>, userAgentComposer: UserAgentComposer): () => Promise<WebApi> {
-  return async () => {
-    const accessToken = await getAzureDevOpsToken();
-    const authHandler = getBearerHandler(accessToken);
+function getAzureDevOpsClient(getAzureDevAuthHeader: AuthHeaderProvider, userAgentComposer: UserAgentComposer): AdoConnectionProvider {
+  return async (toolExtraContext: ToolExtraContext) => {
+    const authHeader = await getAzureDevAuthHeader(toolExtraContext);
+
+    let authHandler: IRequestHandler;
+    if (authHeader.startsWith("Bearer ")) {
+      authHandler = getBearerHandler(authHeader.substring("Bearer ".length));
+    } else {
+      // If the auth header is not a Bearer token, assume it's a PAT token starting with BASIC.
+      // Because the auth header value after BASIC will already be base64 encoded, we don't want to pass it through to the PAT handler which will try to encode it again.
+      // Instead we'll just get the token directly from the environment variable in here to pass through:
+      const patToken = process.env.AZURE_DEVOPS_PAT_TOKEN;
+      if (!patToken) {
+        throw new Error("No Personal Access Token (PAT) available in environment variable AZURE_DEVOPS_PAT_TOKEN for connection authentication.");
+      }
+
+      authHandler = getPersonalAccessTokenHandler(patToken);
+    }
+
     const connection = new WebApi(orgUrl, authHandler, undefined, {
       productName: "AzureDevOps.MCP",
       productVersion: packageVersion,
@@ -113,13 +130,16 @@ async function main() {
   server.server.oninitialized = () => {
     userAgentComposer.appendMcpClientInfo(server.server.getClientVersion());
   };
+
   const tenantId = (await getOrgTenant(orgName)) ?? argv.tenant;
-  const authenticator = createAuthenticator(argv.authentication, tenantId);
+  logger.debug(`Using tenant ID: ${tenantId ?? "not specified"}`);
+
+  const authHeaderProvider = createAuthHeaderProvider();
 
   // removing prompts untill further notice
   // configurePrompts(server);
 
-  configureAllTools(server, authenticator, getAzureDevOpsClient(authenticator, userAgentComposer), () => userAgentComposer.userAgent, enabledDomains);
+  configureAllTools(server, authHeaderProvider, getAzureDevOpsClient(authHeaderProvider, userAgentComposer), () => userAgentComposer.userAgent, enabledDomains);
 
   //const transport = new StdioServerTransport();
   //await server.connect(transport);

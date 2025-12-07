@@ -2,12 +2,12 @@
 // Licensed under the MIT License.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { WebApi } from "azure-devops-node-api";
 import { z } from "zod";
 import { searchIdentities } from "./auth.js";
 
 import type { ProjectInfo } from "azure-devops-node-api/interfaces/CoreInterfaces.js";
 import { IdentityBase } from "azure-devops-node-api/interfaces/IdentitiesInterfaces.js";
+import type { AdoConnectionProvider, AuthHeaderProvider } from "./auth-provider-interfaces.js";
 
 const CORE_TOOLS = {
   list_project_teams: "core_list_project_teams",
@@ -20,7 +20,7 @@ function filterProjectsByName(projects: ProjectInfo[], projectNameFilter: string
   return projects.filter((project) => project.name?.toLowerCase().includes(lowerCaseFilter));
 }
 
-function configureCoreTools(server: McpServer, tokenProvider: () => Promise<string>, connectionProvider: () => Promise<WebApi>, userAgentProvider: () => string) {
+function configureCoreTools(server: McpServer, authHeaderProvider: AuthHeaderProvider, connectionProvider: AdoConnectionProvider, userAgentProvider: () => string) {
   server.tool(
     CORE_TOOLS.list_project_teams,
     "Retrieve a list of teams for the specified Azure DevOps project.",
@@ -30,9 +30,9 @@ function configureCoreTools(server: McpServer, tokenProvider: () => Promise<stri
       top: z.number().optional().describe("The maximum number of teams to return. Defaults to 100."),
       skip: z.number().optional().describe("The number of teams to skip for pagination. Defaults to 0."),
     },
-    async ({ project, mine, top, skip }) => {
+    async ({ project, mine, top, skip }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const coreApi = await connection.getCoreApi();
         const teams = await coreApi.getTeams(project, mine, top, skip, false);
 
@@ -64,9 +64,9 @@ function configureCoreTools(server: McpServer, tokenProvider: () => Promise<stri
       continuationToken: z.number().optional().describe("Continuation token for pagination. Used to fetch the next set of results if available."),
       projectNameFilter: z.string().optional().describe("Filter projects by name. Supports partial matches."),
     },
-    async ({ stateFilter, top, skip, continuationToken, projectNameFilter }) => {
+    async ({ stateFilter, top, skip, continuationToken, projectNameFilter }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const coreApi = await connection.getCoreApi();
         const projects = await coreApi.getProjects(stateFilter, top, skip, continuationToken, false);
 
@@ -96,9 +96,9 @@ function configureCoreTools(server: McpServer, tokenProvider: () => Promise<stri
     {
       searchFilter: z.string().describe("Search filter (unique name, display name, email) to retrieve identity IDs for."),
     },
-    async ({ searchFilter }) => {
+    async ({ searchFilter }, toolExtraContext) => {
       try {
-        const identities = await searchIdentities(searchFilter, tokenProvider, connectionProvider, userAgentProvider);
+        const identities = await searchIdentities(searchFilter, toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
 
         if (!identities || identities.value?.length === 0) {
           return { content: [{ type: "text", text: "No identities found" }], isError: true };

@@ -2,7 +2,6 @@
 // Licensed under the MIT License.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { WebApi } from "azure-devops-node-api";
 import {
   GitRef,
   GitForkRef,
@@ -26,6 +25,7 @@ import { getCurrentUserDetails, getUserIdFromEmail } from "./auth.js";
 import { GitRepository } from "azure-devops-node-api/interfaces/TfvcInterfaces.js";
 import { WebApiTagDefinition } from "azure-devops-node-api/interfaces/CoreInterfaces.js";
 import { getEnumKeys } from "../utils.js";
+import type { AdoConnectionProvider, AuthHeaderProvider } from "./auth-provider-interfaces.js";
 
 const REPO_TOOLS = {
   list_repos_by_project: "repo_list_repos_by_project",
@@ -133,7 +133,7 @@ function trimPullRequest(pr: GitPullRequest, includeDescription = false) {
   };
 }
 
-function configureRepoTools(server: McpServer, tokenProvider: () => Promise<string>, connectionProvider: () => Promise<WebApi>, userAgentProvider: () => string) {
+function configureRepoTools(server: McpServer, authHeaderProvider: AuthHeaderProvider, connectionProvider: AdoConnectionProvider, userAgentProvider: () => string) {
   server.tool(
     REPO_TOOLS.create_pull_request,
     "Create a new pull request.",
@@ -148,9 +148,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       forkSourceRepositoryId: z.string().optional().describe("The ID of the fork repository that the pull request originates from. Optional, used when creating a pull request from a fork."),
       labels: z.array(z.string()).optional().describe("Array of label names to add to the pull request after creation."),
     },
-    async ({ repositoryId, sourceRefName, targetRefName, title, description, isDraft, workItems, forkSourceRepositoryId, labels }) => {
+    async ({ repositoryId, sourceRefName, targetRefName, title, description, isDraft, workItems, forkSourceRepositoryId, labels }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
         const workItemRefs = workItems ? workItems.split(" ").map((id) => ({ id: id.trim() })) : [];
 
@@ -203,9 +203,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       sourceBranchName: z.string().optional().default("main").describe("The name of the source branch to create the new branch from. Defaults to 'main'."),
       sourceCommitId: z.string().optional().describe("The commit ID to create the branch from. If not provided, uses the latest commit of the source branch."),
     },
-    async ({ repositoryId, branchName, sourceBranchName, sourceCommitId }) => {
+    async ({ repositoryId, branchName, sourceBranchName, sourceCommitId }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
 
         let commitId = sourceCommitId;
@@ -317,9 +317,12 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       bypassReason: z.string().optional().describe("Reason for bypassing branch policies. When provided, branch policies will be automatically bypassed during autocompletion."),
       labels: z.array(z.string()).optional().describe("Array of label names to replace existing labels on the pull request. This will remove all current labels and add the specified ones."),
     },
-    async ({ repositoryId, pullRequestId, title, description, isDraft, targetRefName, status, autoComplete, mergeStrategy, deleteSourceBranch, transitionWorkItems, bypassReason, labels }) => {
+    async (
+      { repositoryId, pullRequestId, title, description, isDraft, targetRefName, status, autoComplete, mergeStrategy, deleteSourceBranch, transitionWorkItems, bypassReason, labels },
+      toolExtraContext
+    ) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
 
         // Build update object with only provided fields
@@ -335,7 +338,7 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
 
         if (autoComplete !== undefined) {
           if (autoComplete) {
-            const data = await getCurrentUserDetails(tokenProvider, connectionProvider, userAgentProvider);
+            const data = await getCurrentUserDetails(toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
             const autoCompleteUserId = data.authenticatedUser.id;
             updateRequest.autoCompleteSetBy = { id: autoCompleteUserId };
 
@@ -414,9 +417,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       reviewerIds: z.array(z.string()).describe("List of reviewer ids to add or remove from the pull request."),
       action: z.enum(["add", "remove"]).describe("Action to perform on the reviewers. Can be 'add' or 'remove'."),
     },
-    async ({ repositoryId, pullRequestId, reviewerIds, action }) => {
+    async ({ repositoryId, pullRequestId, reviewerIds, action }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
 
         let updatedPullRequest;
@@ -468,9 +471,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       skip: z.number().default(0).describe("The number of repositories to skip. Defaults to 0."),
       repoNameFilter: z.string().optional().describe("Optional filter to search for repositories by name. If provided, only repositories with names containing this string will be returned."),
     },
-    async ({ project, top, skip, repoNameFilter }) => {
+    async ({ project, top, skip, repoNameFilter }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
         const repositories = await gitApi.getRepositories(project, false, false, false);
 
@@ -525,9 +528,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       sourceRefName: z.string().optional().describe("Filter pull requests from this source branch (e.g., 'refs/heads/feature-branch')."),
       targetRefName: z.string().optional().describe("Filter pull requests into this target branch (e.g., 'refs/heads/main')."),
     },
-    async ({ repositoryId, project, top, skip, created_by_me, created_by_user, i_am_reviewer, user_is_reviewer, status, sourceRefName, targetRefName }) => {
+    async ({ repositoryId, project, top, skip, created_by_me, created_by_user, i_am_reviewer, user_is_reviewer, status, sourceRefName, targetRefName }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
 
         // Build the search criteria
@@ -568,7 +571,7 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
 
         if (created_by_user) {
           try {
-            const userId = await getUserIdFromEmail(created_by_user, tokenProvider, connectionProvider, userAgentProvider);
+            const userId = await getUserIdFromEmail(created_by_user, toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
             searchCriteria.creatorId = userId;
           } catch (error) {
             return {
@@ -582,14 +585,14 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
             };
           }
         } else if (created_by_me) {
-          const data = await getCurrentUserDetails(tokenProvider, connectionProvider, userAgentProvider);
+          const data = await getCurrentUserDetails(toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
           const userId = data.authenticatedUser.id;
           searchCriteria.creatorId = userId;
         }
 
         if (user_is_reviewer) {
           try {
-            const reviewerUserId = await getUserIdFromEmail(user_is_reviewer, tokenProvider, connectionProvider, userAgentProvider);
+            const reviewerUserId = await getUserIdFromEmail(user_is_reviewer, toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
             searchCriteria.reviewerId = reviewerUserId;
           } catch (error) {
             return {
@@ -603,7 +606,7 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
             };
           }
         } else if (i_am_reviewer) {
-          const data = await getCurrentUserDetails(tokenProvider, connectionProvider, userAgentProvider);
+          const data = await getCurrentUserDetails(toolExtraContext, authHeaderProvider, connectionProvider, userAgentProvider);
           const userId = data.authenticatedUser.id;
           searchCriteria.reviewerId = userId;
         }
@@ -675,9 +678,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       authorEmail: z.string().optional().describe("Filter threads by the email of the thread author (first comment author)."),
       authorDisplayName: z.string().optional().describe("Filter threads by the display name of the thread author (first comment author). Case-insensitive partial matching."),
     },
-    async ({ repositoryId, pullRequestId, project, iteration, baseIteration, top, skip, fullResponse, status, authorEmail, authorDisplayName }) => {
+    async ({ repositoryId, pullRequestId, project, iteration, baseIteration, top, skip, fullResponse, status, authorEmail, authorDisplayName }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
 
         const threads = await gitApi.getThreads(repositoryId, pullRequestId, project, iteration, baseIteration);
@@ -741,9 +744,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       skip: z.number().default(0).describe("The number of comments to skip."),
       fullResponse: z.boolean().optional().default(false).describe("Return full comment JSON response instead of trimmed data."),
     },
-    async ({ repositoryId, pullRequestId, threadId, project, top, skip, fullResponse }) => {
+    async ({ repositoryId, pullRequestId, threadId, project, top, skip, fullResponse }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
 
         // Get thread comments - GitApi uses getComments for retrieving comments from a specific thread
@@ -782,9 +785,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       top: z.number().default(100).describe("The maximum number of branches to return. Defaults to 100."),
       filterContains: z.string().optional().describe("Filter to find branches that contain this string in their name."),
     },
-    async ({ repositoryId, top, filterContains }) => {
+    async ({ repositoryId, top, filterContains }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
         const branches = await gitApi.getRefs(repositoryId, undefined, "heads/", undefined, undefined, undefined, undefined, undefined, filterContains);
 
@@ -812,9 +815,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       top: z.number().default(100).describe("The maximum number of branches to return."),
       filterContains: z.string().optional().describe("Filter to find branches that contain this string in their name."),
     },
-    async ({ repositoryId, top, filterContains }) => {
+    async ({ repositoryId, top, filterContains }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
         const branches = await gitApi.getRefs(repositoryId, undefined, "heads/", undefined, undefined, true, undefined, undefined, filterContains);
 
@@ -841,9 +844,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       project: z.string().describe("Project name or ID where the repository is located."),
       repositoryNameOrId: z.string().describe("Repository name or ID."),
     },
-    async ({ project, repositoryNameOrId }) => {
+    async ({ project, repositoryNameOrId }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
         const repositories = await gitApi.getRepositories(project);
 
@@ -877,9 +880,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       repositoryId: z.string().describe("The ID of the repository where the branch is located."),
       branchName: z.string().describe("The name of the branch to retrieve, e.g., 'main' or 'feature-branch'."),
     },
-    async ({ repositoryId, branchName }) => {
+    async ({ repositoryId, branchName }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
         const branches = await gitApi.getRefs(repositoryId, undefined, "heads/", false, false, undefined, false, undefined, branchName);
         const branch = branches.find((branch) => branch.name === `refs/heads/${branchName}` || branch.name === branchName);
@@ -917,9 +920,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       includeWorkItemRefs: z.boolean().optional().default(false).describe("Whether to reference work items associated with the pull request."),
       includeLabels: z.boolean().optional().default(false).describe("Whether to include a summary of labels in the response."),
     },
-    async ({ repositoryId, pullRequestId, includeWorkItemRefs, includeLabels }) => {
+    async ({ repositoryId, pullRequestId, includeWorkItemRefs, includeLabels }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
         const pullRequest = await gitApi.getPullRequest(repositoryId, pullRequestId, undefined, undefined, undefined, undefined, undefined, includeWorkItemRefs);
 
@@ -980,9 +983,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       project: z.string().optional().describe("Project ID or project name (optional)"),
       fullResponse: z.boolean().optional().default(false).describe("Return full comment JSON response instead of a simple confirmation message."),
     },
-    async ({ repositoryId, pullRequestId, threadId, content, project, fullResponse }) => {
+    async ({ repositoryId, pullRequestId, threadId, content, project, fullResponse }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
         const comment = await gitApi.createComment({ content }, repositoryId, pullRequestId, threadId, project);
 
@@ -1048,9 +1051,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
           "Position of last character of the thread's span in right file. The character offset of a thread's position inside of a line. Must only be set if rightFileEndLine is also specified. (optional)"
         ),
     },
-    async ({ repositoryId, pullRequestId, content, project, filePath, status, rightFileStartLine, rightFileStartOffset, rightFileEndLine, rightFileEndOffset }) => {
+    async ({ repositoryId, pullRequestId, content, project, filePath, status, rightFileStartLine, rightFileStartOffset, rightFileEndLine, rightFileEndOffset }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
 
         const normalizedFilePath = filePath && !filePath.startsWith("/") ? `/${filePath}` : filePath;
@@ -1143,9 +1146,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
         .optional()
         .describe("The new status for the comment thread."),
     },
-    async ({ repositoryId, pullRequestId, threadId, project, status }) => {
+    async ({ repositoryId, pullRequestId, threadId, project, status }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
         const updateRequest: Record<string, unknown> = {};
 
@@ -1217,29 +1220,32 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
       commitIds: z.array(z.string()).optional().describe("Array of specific commit IDs to retrieve. When provided, other filters are ignored except top/skip."),
       historySimplificationMode: z.enum(["FirstParent", "SimplifyMerges", "FullHistory", "FullHistorySimplifyMerges"]).optional().describe("How to simplify the commit history"),
     },
-    async ({
-      project,
-      repository,
-      fromCommit,
-      toCommit,
-      version,
-      versionType,
-      skip,
-      top,
-      includeLinks,
-      includeWorkItems,
-      searchText,
-      author,
-      authorEmail,
-      committer,
-      committerEmail,
-      fromDate,
-      toDate,
-      commitIds,
-      historySimplificationMode,
-    }) => {
+    async (
+      {
+        project,
+        repository,
+        fromCommit,
+        toCommit,
+        version,
+        versionType,
+        skip,
+        top,
+        includeLinks,
+        includeWorkItems,
+        searchText,
+        author,
+        authorEmail,
+        committer,
+        committerEmail,
+        fromDate,
+        toDate,
+        commitIds,
+        historySimplificationMode,
+      },
+      toolExtraContext
+    ) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
 
         // If specific commit IDs are provided, use getCommits with commit ID filtering
@@ -1378,9 +1384,9 @@ function configureRepoTools(server: McpServer, tokenProvider: () => Promise<stri
         .default(GitPullRequestQueryType[GitPullRequestQueryType.LastMergeCommit])
         .describe("Type of query to perform"),
     },
-    async ({ project, repository, commits, queryType }) => {
+    async ({ project, repository, commits, queryType }, toolExtraContext) => {
       try {
-        const connection = await connectionProvider();
+        const connection = await connectionProvider(toolExtraContext);
         const gitApi = await connection.getGitApi();
 
         const query: GitPullRequestQuery = {

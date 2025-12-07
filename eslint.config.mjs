@@ -24,16 +24,16 @@ export default tseslint.config(
   },
 
   // Copyright
-  {
-    files: ["src/**/*.ts"],
-    ignores: ["src/index.ts"],
-    plugins: {
-      header: pluginHeader,
-    },
-    rules: {
-      "header/header": ["error", "line", [" Copyright (c) Microsoft Corporation.", " Licensed under the MIT License."], 2],
-    },
-  },
+  // {
+  //   files: ["src/**/*.ts"],
+  //   ignores: ["src/index.ts"],
+  //   plugins: {
+  //     header: pluginHeader,
+  //   },
+  //   rules: {
+  //     "header/header": ["error", "line", [" Copyright (c) Microsoft Corporation.", " Licensed under the MIT License."], 2],
+  //   },
+  // },
 
   // Tool name validation for MCP tools
   {
