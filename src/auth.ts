@@ -4,8 +4,10 @@
 //import { AzureCliCredential, ChainedTokenCredential, DefaultAzureCredential, TokenCredential } from "@azure/identity";
 //import { AccountInfo, AuthenticationResult, PublicClientApplication } from "@azure/msal-node";
 //import open from "open";
+import { VerifyJwtResult } from "transport/http-web-server-with-sessions.js";
 import { logger } from "./logger.js";
 import type { AuthHeaderProvider } from "./tools/auth-provider-interfaces.js";
+import { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 
 const ADO_AUDIENCE = "499b84ac-1321-427f-aa17-267ca6975798";
 //const scopes = [`${ADO_AUDIENCE}/.default`];
@@ -131,18 +133,31 @@ const ADO_AUDIENCE = "499b84ac-1321-427f-aa17-267ca6975798";
 //   }
 // }
 
+function authInfoIsValid(authInfo: unknown): authInfo is AuthInfo & VerifyJwtResult {
+  return (
+    authInfo !== null &&
+    authInfo !== undefined &&
+    (authInfo as any).payload !== null &&
+    (authInfo as any).payload !== undefined &&
+    (authInfo as any).clientId !== null &&
+    (authInfo as any).clientId !== undefined
+  );
+}
+
 function createAuthHeaderProvider(): AuthHeaderProvider {
   logger.debug(
     `Creating default authenticator function that will re-use the incoming mcp server request authorization header if it's audience is valid for Azure Devops OR fallback on a PAT token from environment variable if configured`
   );
   return async (toolExtraContext) => {
-    if (toolExtraContext.authInfo) {
-      logger.debug(`Incoming tool extra context auth info: ${JSON.stringify(toolExtraContext.authInfo)}`);
-      const canPassThroughIncomingAuthHeader = toolExtraContext.authInfo.scopes?.some((scope) => scope.startsWith(ADO_AUDIENCE));
+    if (authInfoIsValid(toolExtraContext.authInfo)) {
+      const canPassThroughIncomingAuthHeader = toolExtraContext.authInfo.payload.aud === ADO_AUDIENCE;
+
       if (canPassThroughIncomingAuthHeader === true && toolExtraContext.authInfo.token) {
         logger.debug(`Re-using incoming mcp server request authorization header for Azure DevOps access`);
         return `Bearer ${toolExtraContext.authInfo.token}`;
       }
+    } else {
+      logger.error(`Incoming tool extra context auth info is invalid or missing required properties`);
     }
 
     const patToken = process.env.AZURE_DEVOPS_PAT_TOKEN;
