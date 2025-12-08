@@ -153,6 +153,9 @@ export class StreamableHttpWebServerWithSessions {
   public start = (): Promise<void> => {
     const port = process.env.MCP_HTTP_PORT || 8080;
 
+    // NOTE: If we wanted to use a custom domain for the azure container app we would have to configure express to handle HTTPS + ssl certs.
+    // For now we'll just use the standard azurecontainerapps.io hostname which handles ssl for as an terminates ssl at the ingress layer.
+
     return new Promise((resolve, reject) => {
       this.app
         .listen(port, () => {

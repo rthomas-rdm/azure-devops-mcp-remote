@@ -1,9 +1,12 @@
-import express, { type Express, type Request as ExpressRequest, type Response as ExpressResponse, type RequestHandler as ExpressRequestHandler } from "express";
+import express, { type Express, type Request as ExpressRequest, type Response as ExpressResponse } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { auth as jwtBearerOAuthMiddleware } from "express-oauth2-jwt-bearer";
 import { logger } from "../logger.js";
 import cors from "cors";
+import { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+
+type VerifyJwtResult = ExpressRequest["auth"];
 
 // Based on mcp typescript sdk example: https://github.com/modelcontextprotocol/typescript-sdk#without-session-management-recommended
 export class StreamableHttpWebServerWithoutSessions {
@@ -47,7 +50,7 @@ export class StreamableHttpWebServerWithoutSessions {
     this.app.post("/mcp", this.handlePost);
   }
 
-  private handlePost = async (request: any, response: ExpressResponse) => {
+  private handlePost = async (request: ExpressRequest, response: ExpressResponse) => {
     // In stateless mode, create a new transport for each request to prevent
     // request ID collisions. Different clients may use the same JSON-RPC request IDs,
     // which would cause responses to be routed to the wrong HTTP connections if
@@ -63,8 +66,29 @@ export class StreamableHttpWebServerWithoutSessions {
         transport.close();
       });
 
+      if (!request.auth) {
+        throw new Error("Request is missing auth information. Ensure the jwt bearer oauth validation middleware is correctly configured.");
+      }
+
+      const jwtPayload: any = request.auth.payload;
+
+      // Normalize the auth object that express-oauth2-jwt-bearer package adds to the request to match the MCP AuthInfo interface
+      // TODO: Make the normalization configurable, for now we'll just map under the assumption the JWT will be using microsoft identity platform claims
+      // See https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference
+      const scopes = jwtPayload.scp.split(" ");
+      // azp == client id value in microsoft identity platform v2.0 tokens, appid == client id in v1.0 tokens
+      const clientId = jwtPayload.azp || jwtPayload.appid || "";
+      const expiresAt = jwtPayload.exp;
+
+      request.auth = {
+        ...request.auth,
+        clientId,
+        expiresAt,
+        scopes,
+      } as AuthInfo & VerifyJwtResult;
+
       await this.mcpServer.connect(transport);
-      await transport.handleRequest(request, response, request.body);
+      await transport.handleRequest(request as any, response, request.body);
     } catch (error) {
       logger.error("Error handling MCP request:", error);
       if (!response.headersSent) {
@@ -82,6 +106,9 @@ export class StreamableHttpWebServerWithoutSessions {
 
   public start = (): Promise<void> => {
     const port = process.env.MCP_HTTP_PORT || 8080;
+
+    // NOTE: If we wanted to use a custom domain for the azure container app we would have to configure express to handle HTTPS + ssl certs.
+    // For now we'll just use the standard azurecontainerapps.io hostname which handles ssl for as an terminates ssl at the ingress layer.
 
     return new Promise((resolve, reject) => {
       this.app
